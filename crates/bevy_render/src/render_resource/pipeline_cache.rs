@@ -243,6 +243,82 @@ impl ShaderCache {
         Ok(())
     }
 
+    fn get_naga_module(
+        self,
+        id: AssetId<Shader>,
+        shader_defs: &[ShaderDefVal],
+    ) -> Result<naga::Module, PipelineCacheError> {
+        // implementation copied from `ShaderCache::get`
+        let shader = self
+            .shaders
+            .get(&id)
+            .ok_or(PipelineCacheError::ShaderNotLoaded(id))?;
+        let data = self.data.entry(id).or_default();
+        let n_asset_imports = shader
+            .imports()
+            .filter(|import| matches!(import, ShaderImport::AssetPath(_)))
+            .count();
+        let n_resolved_asset_imports = data
+            .resolved_imports
+            .keys()
+            .filter(|import| matches!(import, ShaderImport::AssetPath(_)))
+            .count();
+        if n_asset_imports != n_resolved_asset_imports {
+            return Err(PipelineCacheError::ShaderImportNotYetAvailable);
+        }
+
+        let mut shader_defs = shader_defs.to_vec();
+        #[cfg(all(feature = "webgl", target_arch = "wasm32", not(feature = "webgpu")))]
+        {
+            shader_defs.push("NO_ARRAY_TEXTURES_SUPPORT".into());
+            shader_defs.push("SIXTEEN_BYTE_ALIGNMENT".into());
+        }
+
+        shader_defs.push(ShaderDefVal::UInt(
+            String::from("AVAILABLE_STORAGE_BUFFER_BINDINGS"),
+            render_device.limits().max_storage_buffers_per_shader_stage,
+        ));
+
+        debug!(
+            "processing shader {:?}, with shader defs {:?}",
+            id, shader_defs
+        );
+
+        for import in shader.imports() {
+            Self::add_import_to_composer(
+                &mut self.composer,
+                &self.import_path_shaders,
+                &self.shaders,
+                import,
+            )?;
+        }
+
+        let shader_defs = shader_defs
+            .into_iter()
+            .chain(shader.shader_defs.iter().cloned())
+            .map(|def| match def {
+                ShaderDefVal::Bool(k, v) => {
+                    (k, naga_oil::compose::ShaderDefValue::Bool(v))
+                }
+                ShaderDefVal::Int(k, v) => {
+                    (k, naga_oil::compose::ShaderDefValue::Int(v))
+                }
+                ShaderDefVal::UInt(k, v) => {
+                    (k, naga_oil::compose::ShaderDefValue::UInt(v))
+                }
+            })
+            .collect::<std::collections::HashMap<_, _>>();
+
+        let naga_module = self.composer.make_naga_module(
+            naga_oil::compose::NagaModuleDescriptor {
+                shader_defs,
+                ..shader.into()
+            },
+        )?;
+
+        Ok(naga_module)
+    }
+
     #[allow(clippy::result_large_err)]
     fn get(
         &mut self,
@@ -488,6 +564,23 @@ pub struct PipelineCache {
 impl PipelineCache {
     pub fn pipelines(&self) -> impl Iterator<Item = &CachedPipeline> {
         self.pipelines.iter()
+    }
+
+    pub fn get_naga_module(
+        &self,
+        id: CachedComputePipelineId,
+    ) -> naga::Module {
+        let shader_id = match &self.pipelines[id.0].descriptor {
+            PipelineDescriptor::ComputePipelineDescriptor(descriptor) => descriptor.shader.id(),
+            PipelineDescriptor::RenderPipelineDescriptor(_) => todo!(),
+        };
+
+        let shader_defs = match &self.pipelines[id.0].descriptor {
+            PipelineDescriptor::ComputePipelineDescriptor(descriptor) => &descriptor.shader_defs,
+            PipelineDescriptor::RenderPipelineDescriptor(_) => todo!(),
+        };
+
+        return self.shader_cache.lock().unwrap().get_naga_module(shader_id, shader_defs.as_slice()).unwrap();
     }
 
     /// Create a new pipeline cache associated with the given render device.
