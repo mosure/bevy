@@ -249,7 +249,7 @@ impl ShaderCache {
     }
 
     fn get_naga_module(
-        self,
+        mut self,
         id: AssetId<Shader>,
         render_device: &RenderDevice,
         shader_defs: &[ShaderDefVal],
@@ -591,11 +591,16 @@ impl PipelineCache {
             PipelineDescriptor::RenderPipelineDescriptor(_) => todo!(),
         };
 
-        return self.shader_cache.lock().unwrap().get_naga_module(
-            shader_id,
-            &self.device,
-            shader_defs.as_slice(),
-        ).unwrap();
+        let naga_module = {
+            let shader_cache_lock = self.shader_cache.lock().unwrap();
+            shader_cache_lock.get_naga_module(
+                shader_id,
+                &self.device,
+                shader_defs.as_slice(),
+            ).unwrap()
+        };
+
+        naga_module
     }
 
     /// Create a new pipeline cache associated with the given render device.
