@@ -246,6 +246,7 @@ impl ShaderCache {
     fn get_naga_module(
         self,
         id: AssetId<Shader>,
+        render_device: &RenderDevice,
         shader_defs: &[ShaderDefVal],
     ) -> Result<naga::Module, PipelineCacheError> {
         // implementation copied from `ShaderCache::get`
@@ -580,7 +581,11 @@ impl PipelineCache {
             PipelineDescriptor::RenderPipelineDescriptor(_) => todo!(),
         };
 
-        return self.shader_cache.lock().unwrap().get_naga_module(shader_id, shader_defs.as_slice()).unwrap();
+        return self.shader_cache.lock().unwrap().get_naga_module(
+            shader_id,
+            &self.device,
+            shader_defs.as_slice(),
+        ).unwrap();
     }
 
     /// Create a new pipeline cache associated with the given render device.
