@@ -253,7 +253,7 @@ impl ShaderCache {
         id: AssetId<Shader>,
         render_device: &RenderDevice,
         shader_defs: &[ShaderDefVal],
-    ) -> Result<naga::Module, PipelineCacheError> {
+    ) -> Result<(naga::Module, naga::valid::ModuleInfo), PipelineCacheError> {
         // implementation copied from `ShaderCache::get`
         let shader = self
             .shaders
@@ -315,14 +315,21 @@ impl ShaderCache {
             })
             .collect::<std::collections::HashMap<_, _>>();
 
-        let naga_module = self.composer.make_naga_module(
+        let module = self.composer.make_naga_module(
             naga_oil::compose::NagaModuleDescriptor {
                 shader_defs,
                 ..shader.into()
             },
         )?;
 
-        Ok(naga_module)
+        let module_info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                self.composer.capabilities
+            )
+            .validate(&module)
+            .map_err(|err| PipelineCacheError::CreateShaderModule(err.to_string()))?;
+
+        Ok((module, module_info))
     }
 
     #[allow(clippy::result_large_err)]
@@ -580,7 +587,7 @@ impl PipelineCache {
     pub fn get_naga_module(
         &self,
         id: CachedComputePipelineId,
-    ) -> naga::Module {
+    ) -> (naga::Module, naga::valid::ModuleInfo) {
         let shader_id = match &self.pipelines[id.0].descriptor {
             PipelineDescriptor::ComputePipelineDescriptor(descriptor) => descriptor.shader.id(),
             PipelineDescriptor::RenderPipelineDescriptor(_) => todo!(),
@@ -591,16 +598,16 @@ impl PipelineCache {
             PipelineDescriptor::RenderPipelineDescriptor(_) => todo!(),
         };
 
-        let naga_module = {
+        let module_bundle = {
             let mut shader_cache_lock = self.shader_cache.lock().unwrap();
             shader_cache_lock.get_naga_module(
                 shader_id,
                 &self.device,
                 shader_defs.as_slice(),
-            ).unwrap()
+            ).expect("failed to get naga module")
         };
 
-        naga_module
+        module_bundle
     }
 
     /// Create a new pipeline cache associated with the given render device.
