@@ -49,7 +49,7 @@ pub enum Pipeline {
     ComputePipeline(ComputePipeline),
 }
 
-type CachedPipelineId = usize;
+pub type CachedPipelineId = usize;
 
 /// Index of a cached render pipeline in a [`PipelineCache`].
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
@@ -586,16 +586,22 @@ impl PipelineCache {
 
     pub fn get_naga_module(
         &self,
-        id: CachedComputePipelineId,
+        id: CachedPipelineId,
     ) -> (naga::Module, naga::valid::ModuleInfo) {
-        let shader_id = match &self.pipelines[id.0].descriptor {
+        let shader_id = match &self.pipelines[id].descriptor {
             PipelineDescriptor::ComputePipelineDescriptor(descriptor) => descriptor.shader.id(),
-            PipelineDescriptor::RenderPipelineDescriptor(_) => todo!(),
+            PipelineDescriptor::RenderPipelineDescriptor(descriptor) => {
+                let fragment = descriptor.fragment.as_ref().unwrap();
+                fragment.shader.id()
+            },
         };
 
-        let shader_defs = match &self.pipelines[id.0].descriptor {
+        let shader_defs = match &self.pipelines[id].descriptor {
             PipelineDescriptor::ComputePipelineDescriptor(descriptor) => &descriptor.shader_defs,
-            PipelineDescriptor::RenderPipelineDescriptor(_) => todo!(),
+            PipelineDescriptor::RenderPipelineDescriptor(descriptor) => {
+                let fragment = descriptor.fragment.as_ref().unwrap();
+                &fragment.shader_defs
+            },
         };
 
         let module_bundle = {
