@@ -74,7 +74,7 @@ wgpu = { version = "22.1.0", default-features = false, features = [
   "naga-ir",
   "fragile-send-sync-non-atomic-wasm",
 ] }
-naga = { version = "23", features = ["wgsl-in"] }
+naga = { version = "22.1", features = ["wgsl-in"] }
 serde = { version = "1", features = ["derive"] }
 bytemuck = { version = "1.5", features = ["derive", "must_cast"] }
 downcast-rs = "1.2.0"
